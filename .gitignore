@@ -1,0 +1,8 @@
+# Datos sensibles: nunca subir
+*.pdf
+*.xlsx
+*.xls
+*.csv
+!lista_ejemplo.csv
+Proyectos Medicos/
+__pycache__/
