@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Segregar EMO</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16202b;--mut:#64707d;--line:#dde2e8;--acc:#0b6b5d;--acc-ink:#fff;--ok:#0b6b5d;--warn:#a85d00;--no:#7a8591;--okbg:#e3f3ef;--warnbg:#fdf0dc;--nobg:#eef0f3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10151a;--card:#182027;--ink:#e8edf2;--mut:#93a0ad;--line:#2a343d;--acc:#3cb8a4;--acc-ink:#07201b;--ok:#5fd0bc;--warn:#f0b35a;--no:#93a0ad;--okbg:#14352f;--warnbg:#3a2c12;--nobg:#222b33}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--mut);margin:0 0 20px}
+.priv{background:var(--okbg);color:var(--ok);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.card h2{font-size:15px;margin:0 0 10px;display:flex;gap:8px;align-items:center}
+.n{background:var(--acc);color:var(--acc-ink);border-radius:50%;width:22px;height:22px;display:inline-grid;place-items:center;font-size:12px}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:22px;text-align:center;color:var(--mut);cursor:pointer;transition:.15s}
+.drop.over{border-color:var(--acc);background:var(--okbg)}
+.drop b{color:var(--ink)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 14px;border-radius:8px;cursor:pointer}
+button.pri{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type=text]{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%}
+label.l{font-size:13px;color:var(--mut);display:block;margin:10px 0 4px}
+.stat{color:var(--mut);font-size:13px;margin-top:8px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;background:var(--card)}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.tw{overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--card);font-weight:600}
+td.f{white-space:normal;word-break:break-word;min-width:220px}
+.tag{border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600}
+.t-ok{background:var(--okbg);color:var(--ok)}.t-warn{background:var(--warnbg);color:var(--warn)}.t-no{background:var(--nobg);color:var(--no)}
+.hide{display:none}
+.msg{font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>Segregar EMO por proyecto</h1>
+<p class="sub">Arrastra el Excel de la fuerza laboral y los PDF; la página separa los del proyecto.</p>
+<div class="priv">🔒 Todo se procesa en tu navegador. Los PDF y el Excel no se envían a ningún servidor.</div>
+
+<div class="card">
+  <h2><span class="n">1</span> Lista del proyecto (Excel)</h2>
+  <div class="drop" id="dropX"><b>Arrastra aquí el Excel</b> o haz clic para elegirlo<input type="file" id="fileX" accept=".xlsx,.xls,.csv" class="hide"></div>
+  <div class="stat" id="statX"></div>
+  <label class="l" for="proy">Nombre de la carpeta del proyecto</label>
+  <input type="text" id="proy" value="0171 - Proyecto Movimiento de tierras TSF 3+">
+</div>
+
+<div class="card">
+  <h2><span class="n">2</span> PDF de EMO</h2>
+  <div class="drop" id="dropP"><b>Arrastra aquí la carpeta EMO, una carpeta de mes o los PDF</b><br><small>Si arrastras carpetas, se detecta el mes por el nombre de la carpeta (ej. «1. ENE»)</small></div>
+  <div class="row">
+    <button id="btnFolder">Elegir carpeta…</button>
+    <button id="btnFiles">Elegir PDF…</button>
+    <button id="btnClear">Limpiar</button>
+  </div>
+  <input type="file" id="fileF" webkitdirectory class="hide">
+  <input type="file" id="fileP" accept=".pdf" multiple class="hide">
+  <div class="stat" id="statP"></div>
+</div>
+
+<div class="card hide" id="resCard">
+  <h2><span class="n">3</span> Resultado</h2>
+  <div class="chips" id="chips"></div>
+  <div class="tw"><table><thead><tr><th></th><th>Mes</th><th>Archivo</th><th>Estado</th><th>Coincide con (lista)</th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="stat" id="sumLista"></div>
+  <div class="row">
+    <button class="pri" id="btnSave">Guardar en una carpeta…</button>
+    <button id="btnZip">Descargar ZIP</button>
+    <button id="btnCsv">Descargar reporte CSV</button>
+  </div>
+  <div class="msg" id="msg"></div>
+  <div class="stat">Se copian solo los marcados. «Revisar» son nombres parecidos o truncados: se marcan tú, uno por uno. Los originales no se tocan.</div>
+</div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+let lista=new Map();   // clave -> dni
+let items=[];          // {file, mes, clave, estado, cand, inc}
+let filtro='TODOS';
+
+/* ---------- normalización y coincidencia ---------- */
+const norm=s=>String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[\s_\-.,]+/g,' ').trim();
+const claveArchivo=n=>norm(n.replace(/\.pdf$/i,'').replace(/[\s_\-]*20\d\d.*$/i,''));
+function lev(a,b){const m=a.length,n=b.length;let p=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){let c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}
+  return p[n]}
+const ratio=(a,b)=>1-lev(a,b)/Math.max(a.length,b.length,1);
+const sortTok=s=>s.split(' ').sort().join(' ');
+function clasificar(clave){
+  if(clave.split(' ').filter(Boolean).length<2) return ['MALFORMADO',''];
+  if(lista.has(clave)) return ['EXACTO',clave];
+  const st=sortTok(clave), cs=[];
+  for(const k of lista.keys()){
+    if(sortTok(k)===st || ratio(clave,k)>=0.9 || (clave.length>=12&&(k.startsWith(clave)||clave.startsWith(k)))) cs.push(k);
+  }
+  return cs.length?['REVISAR',cs.join(' | ')]:['NO_TSF',''];
+}
+const mesDest=m=>{const x=m.match(/^\s*(\d+)\.?\s*(.*)$/);return x?String(+x[1]).padStart(2,'0')+' '+x[2].trim():m};
+
+/* ---------- Excel ---------- */
+async function leerExcel(file){
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+  const h=(rows[0]||[]).map(c=>String(c).toUpperCase());
+  const iN=h.findIndex(c=>c.includes('APELLIDOS')), iD=h.findIndex(c=>c.trim()==='DNI');
+  if(iN<0){$('statX').textContent='No encontré la columna «APELLIDOS Y NOMBRES».';return}
+  lista=new Map();let rep=[];
+  for(const r of rows.slice(1)){ if(!r[iN])continue; const k=norm(r[iN]); if(lista.has(k))rep.push(k); lista.set(k,iD>=0?r[iD]:'') }
+  $('statX').innerHTML=`✔ ${file.name} — <b>${lista.size}</b> trabajadores`+(rep.length?` · ⚠ repetidos: ${rep.join(', ')}`:'');
+  reclasificar();
+}
+
+/* ---------- PDFs ---------- */
+function agregar(lst){ // lst: [{file, mes}]
+  const ya=new Set(items.map(i=>i.file.name+'|'+i.mes+'|'+i.file.size));
+  for(const {file,mes} of lst){
+    if(!/\.pdf$/i.test(file.name))continue;
+    if(ya.has(file.name+'|'+mes+'|'+file.size))continue;
+    items.push({file,mes,clave:'',estado:'',cand:'',inc:false});
+  }
+  reclasificar();
+}
+function reclasificar(){
+  for(const it of items){
+    it.clave=claveArchivo(it.file.name);
+    [it.estado,it.cand]=lista.size?clasificar(it.clave):['—',''];
+    it.inc=it.estado==='EXACTO';
+  }
+  pintar();
+}
+async function leerEntry(e,pathParts,out){
+  if(e.isFile){const f=await new Promise(r=>e.file(r));out.push({file:f,mes:pathParts[pathParts.length-1]||'SIN MES'})}
+  else if(e.isDirectory){
+    const rd=e.createReader();let all=[];
+    for(;;){const b=await new Promise(r=>rd.readEntries(r));if(!b.length)break;all=all.concat(b)}
+    for(const c of all) await leerEntry(c,pathParts.concat(e.name),out);
+  }
+}
+async function desdeDrop(ev){
+  const out=[];const its=[...ev.dataTransfer.items];
+  const ents=its.map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry());
+  if(ents.some(Boolean)){for(const e of ents){if(e)await leerEntry(e,[],out)}}
+  else for(const f of ev.dataTransfer.files) out.push({file:f,mes:'SIN MES'});
+  agregar(out);
+}
+
+/* ---------- vista ---------- */
+const TAG={EXACTO:['t-ok','TSF'],REVISAR:['t-warn','Revisar'],NO_TSF:['t-no','No TSF'],MALFORMADO:['t-warn','Nombre raro'],'—':['t-no','Sin lista']};
+function pintar(){
+  $('statP').textContent=items.length?`${items.length} PDF cargados`:'';
+  $('resCard').classList.toggle('hide',!items.length);
+  if(!items.length)return;
+  const cnt={};items.forEach(i=>cnt[i.estado]=(cnt[i.estado]||0)+1);
+  const opts=['TODOS',...Object.keys(cnt)];
+  $('chips').innerHTML=opts.map(o=>`<span class="chip ${o===filtro?'on':''}" data-f="${o}">${o==='TODOS'?'Todos':TAG[o][1]} (${o==='TODOS'?items.length:cnt[o]})</span>`).join('');
+  $('tb').innerHTML=items.map((it,ix)=>({it,ix})).filter(({it})=>filtro==='TODOS'||it.estado===filtro).map(({it,ix})=>{
+    const t=TAG[it.estado];const can=it.estado==='EXACTO'||it.estado==='REVISAR';
+    return `<tr><td>${can?`<input type="checkbox" data-i="${ix}" ${it.inc?'checked':''}>`:''}</td><td>${esc(it.mes)}</td><td class="f">${esc(it.file.name)}</td><td><span class="tag ${t[0]}">${t[1]}</span></td><td class="f">${esc(it.cand)}</td></tr>`}).join('');
+  const vistos=new Set(items.filter(i=>i.estado==='EXACTO').map(i=>i.cand));
+  const falta=[...lista.keys()].filter(k=>!vistos.has(k));
+  $('sumLista').innerHTML=lista.size?`De la lista (${lista.size}), <b>${vistos.size}</b> tienen PDF y <b>${falta.length}</b> no${falta.length&&falta.length<=12?': '+falta.map(esc).join('; '):''}.`:'';
+  const n=items.filter(i=>i.inc).length;$('btnSave').disabled=$('btnZip').disabled=!n;
+  $('btnSave').textContent=`Guardar ${n} en una carpeta…`;$('btnZip').textContent=`Descargar ZIP (${n})`;
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- salida ---------- */
+function rutas(){ // asigna ruta destino evitando choques
+  const base=($('proy').value||'PROYECTO').trim(), usados=new Set(), out=[];
+  for(const it of items.filter(i=>i.inc)){
+    const dir=[base,'2026',mesDest(it.mes)];let nm=it.file.name,k=dir.join('/')+'/'+nm,n=2;
+    while(usados.has(k.toLowerCase())){nm=it.file.name.replace(/\.pdf$/i,'')+`_v${n++}.pdf`;k=dir.join('/')+'/'+nm}
+    usados.add(k.toLowerCase());out.push({it,dir,nm});
+  }
+  return out;
+}
+async function guardar(){
+  if(!window.showDirectoryPicker){$('msg').textContent='Tu navegador no permite guardar en carpeta. Usa Chrome/Edge o el ZIP.';return}
+  let root;try{root=await showDirectoryPicker({mode:'readwrite'})}catch{return}
+  const r=rutas();let ok=0;
+  for(const {it,dir,nm} of r){
+    try{let h=root;for(const d of dir)h=await h.getDirectoryHandle(d,{create:true});
+      const fh=await h.getFileHandle(nm,{create:true});const w=await fh.createWritable();await w.write(it.file);await w.close();ok++;
+      $('msg').textContent=`Guardando… ${ok}/${r.length}`;
+    }catch(e){$('msg').textContent='Error en '+nm+': '+e.message;return}
+  }
+  $('msg').textContent=`✔ ${ok} PDF guardados en «${root.name}/${dir0()}».`;
+}
+const dir0=()=>($('proy').value||'PROYECTO').trim();
+async function zip(){
+  const z=new JSZip();for(const {it,dir,nm} of rutas())z.file(dir.join('/')+'/'+nm,it.file);
+  $('msg').textContent='Generando ZIP…';
+  const b=await z.generateAsync({type:'blob',compression:'STORE'});
+  descargar(b,'EMO_proyecto.zip');$('msg').textContent='✔ ZIP generado.';
+}
+function csv(){
+  const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  const l=[['mes','archivo','clave','estado','coincide_con','copiado'].join(',')];
+  for(const i of items)l.push([i.mes,i.file.name,i.clave,i.estado,i.cand,i.inc?'SI':'NO'].map(q).join(','));
+  descargar(new Blob(['﻿'+l.join('\n')],{type:'text/csv'}),'reporte_emo.csv');
+}
+function descargar(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
+
+/* ---------- eventos ---------- */
+function dz(el,fn,click){
+  ['dragenter','dragover'].forEach(e=>el.addEventListener(e,ev=>{ev.preventDefault();el.classList.add('over')}));
+  ['dragleave','drop'].forEach(e=>el.addEventListener(e,()=>el.classList.remove('over')));
+  el.addEventListener('drop',ev=>{ev.preventDefault();fn(ev)});
+  if(click)el.addEventListener('click',click);
+}
+dz($('dropX'),ev=>{const f=ev.dataTransfer.files[0];if(f)leerExcel(f)},()=>$('fileX').click());
+$('fileX').onchange=e=>e.target.files[0]&&leerExcel(e.target.files[0]);
+dz($('dropP'),desdeDrop);
+$('btnFolder').onclick=()=>$('fileF').click();$('btnFiles').onclick=()=>$('fileP').click();
+$('fileF').onchange=e=>{agregar([...e.target.files].map(f=>{const p=f.webkitRelativePath.split('/');return{file:f,mes:p.length>1?p[p.length-2]:'SIN MES'}}));e.target.value=''};
+$('fileP').onchange=e=>{agregar([...e.target.files].map(f=>({file:f,mes:'SIN MES'})));e.target.value=''};
+$('btnClear').onclick=()=>{items=[];filtro='TODOS';$('msg').textContent='';pintar()};
+$('chips').onclick=e=>{const f=e.target.dataset.f;if(f){filtro=f;pintar()}};
+$('tb').onchange=e=>{const i=e.target.dataset.i;if(i!=null){items[i].inc=e.target.checked;pintar()}};
+$('btnSave').onclick=guardar;$('btnZip').onclick=zip;$('btnCsv').onclick=csv;
+['dragover','drop'].forEach(e=>window.addEventListener(e,ev=>ev.preventDefault()));
+</script>
+</body>
+</html>
