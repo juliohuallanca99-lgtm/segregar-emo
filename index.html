@@ -38,6 +38,10 @@ td.f{white-space:normal;word-break:break-word;min-width:220px}
 .t-ok{background:var(--okbg);color:var(--ok)}.t-warn{background:var(--warnbg);color:var(--warn)}.t-no{background:var(--nobg);color:var(--no)}
 .hide{display:none}
 .msg{font-size:13px;margin-top:8px}
+.man{font-size:11px;color:var(--warn);margin-left:6px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.bar input[type=text]{max-width:260px}
+input[type=checkbox]{width:16px;height:16px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -69,8 +73,8 @@ td.f{white-space:normal;word-break:break-word;min-width:220px}
 
 <div class="card hide" id="resCard">
   <h2><span class="n">3</span> Resultado</h2>
-  <div class="chips" id="chips"></div>
-  <div class="tw"><table><thead><tr><th></th><th>Mes</th><th>Archivo</th><th>Estado</th><th>Coincide con (lista)</th></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="bar"><div class="chips" id="chips" style="margin:0"></div><input type="text" id="q" placeholder="Buscar por nombre…"></div>
+  <div class="tw"><table><thead><tr><th><input type="checkbox" id="all" title="Marcar/desmarcar los visibles"></th><th>Mes</th><th>Archivo</th><th>Estado</th><th>Coincide con (lista)</th></tr></thead><tbody id="tb"></tbody></table></div>
   <div class="stat" id="sumLista"></div>
   <div class="row">
     <button class="pri" id="btnSave">Guardar en una carpeta…</button>
@@ -78,7 +82,7 @@ td.f{white-space:normal;word-break:break-word;min-width:220px}
     <button id="btnCsv">Descargar reporte CSV</button>
   </div>
   <div class="msg" id="msg"></div>
-  <div class="stat">Se copian solo los marcados. «Revisar» son nombres parecidos o truncados: se marcan tú, uno por uno. Los originales no se tocan.</div>
+  <div class="stat">Se copian solo los marcados. Puedes marcar a mano cualquier PDF, aunque no salga como TSF (queda como «manual»). «Revisar» son nombres parecidos o truncados. Los originales no se tocan.</div>
 </div>
 </main>
 
@@ -88,7 +92,7 @@ td.f{white-space:normal;word-break:break-word;min-width:220px}
 const $=id=>document.getElementById(id);
 let lista=new Map();   // clave -> dni
 let items=[];          // {file, mes, clave, estado, cand, inc}
-let filtro='TODOS';
+let filtro='TODOS', q='';
 
 /* ---------- normalización y coincidencia ---------- */
 const norm=s=>String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[\s_\-.,]+/g,' ').trim();
@@ -124,11 +128,13 @@ async function leerExcel(file){
 
 /* ---------- PDFs ---------- */
 function agregar(lst){ // lst: [{file, mes}]
-  const ya=new Set(items.map(i=>i.file.name+'|'+i.mes+'|'+i.file.size));
+  const key=(f,m)=>f.name+'|'+m;
+  const ya=new Map(items.map(i=>[key(i.file,i.mes),i]));
   for(const {file,mes} of lst){
     if(!/\.pdf$/i.test(file.name))continue;
-    if(ya.has(file.name+'|'+mes+'|'+file.size))continue;
-    items.push({file,mes,clave:'',estado:'',cand:'',inc:false});
+    const ex=ya.get(key(file,mes));
+    if(ex){ if(ex.err){ex.file=file;ex.err=false} continue }
+    items.push({file,mes,clave:'',estado:'',cand:'',inc:false,man:undefined});
   }
   reclasificar();
 }
@@ -136,7 +142,7 @@ function reclasificar(){
   for(const it of items){
     it.clave=claveArchivo(it.file.name);
     [it.estado,it.cand]=lista.size?clasificar(it.clave):['—',''];
-    it.inc=it.estado==='EXACTO';
+    it.inc=(it.man!==undefined)?it.man:it.estado==='EXACTO';
   }
   pintar();
 }
@@ -157,23 +163,25 @@ async function desdeDrop(ev){
 }
 
 /* ---------- vista ---------- */
-const TAG={EXACTO:['t-ok','TSF'],REVISAR:['t-warn','Revisar'],NO_TSF:['t-no','No TSF'],MALFORMADO:['t-warn','Nombre raro'],'—':['t-no','Sin lista']};
+const TAG={ERROR:['t-warn','Error de lectura'],EXACTO:['t-ok','TSF'],REVISAR:['t-warn','Revisar'],NO_TSF:['t-no','No TSF'],MALFORMADO:['t-warn','Nombre raro'],'—':['t-no','Sin lista']};
 function pintar(){
   $('statP').textContent=items.length?`${items.length} PDF cargados`:'';
   $('resCard').classList.toggle('hide',!items.length);
   if(!items.length)return;
-  const cnt={};items.forEach(i=>cnt[i.estado]=(cnt[i.estado]||0)+1);
+  const cnt={};items.forEach(i=>{cnt[i.estado]=(cnt[i.estado]||0)+1;if(i.err)cnt.ERROR=(cnt.ERROR||0)+1});
   const opts=['TODOS',...Object.keys(cnt)];
   $('chips').innerHTML=opts.map(o=>`<span class="chip ${o===filtro?'on':''}" data-f="${o}">${o==='TODOS'?'Todos':TAG[o][1]} (${o==='TODOS'?items.length:cnt[o]})</span>`).join('');
-  $('tb').innerHTML=items.map((it,ix)=>({it,ix})).filter(({it})=>filtro==='TODOS'||it.estado===filtro).map(({it,ix})=>{
-    const t=TAG[it.estado];const can=it.estado==='EXACTO'||it.estado==='REVISAR';
-    return `<tr><td>${can?`<input type="checkbox" data-i="${ix}" ${it.inc?'checked':''}>`:''}</td><td>${esc(it.mes)}</td><td class="f">${esc(it.file.name)}</td><td><span class="tag ${t[0]}">${t[1]}</span></td><td class="f">${esc(it.cand)}</td></tr>`}).join('');
+  $('tb').innerHTML=visibles().map(({it,ix})=>{
+    const t=TAG[it.estado];const manual=it.inc&&it.estado!=='EXACTO';
+    return `<tr><td><input type="checkbox" data-i="${ix}" ${it.inc?'checked':''}></td><td>${esc(it.mes)}</td><td class="f">${esc(it.file.name)}</td><td><span class="tag ${t[0]}">${t[1]}</span>${manual?'<span class="man">manual</span>':''}${it.err?'<span class="man">⚠ no se pudo leer</span>':''}${it.saved&&!it.err?'<span class="man" style="color:var(--ok)">✔ guardado</span>':''}</td><td class="f">${esc(it.cand)}</td></tr>`}).join('');
   const vistos=new Set(items.filter(i=>i.estado==='EXACTO').map(i=>i.cand));
   const falta=[...lista.keys()].filter(k=>!vistos.has(k));
   $('sumLista').innerHTML=lista.size?`De la lista (${lista.size}), <b>${vistos.size}</b> tienen PDF y <b>${falta.length}</b> no${falta.length&&falta.length<=12?': '+falta.map(esc).join('; '):''}.`:'';
+  const vis=visibles();const nv=vis.filter(v=>v.it.inc).length;$('all').checked=vis.length>0&&nv===vis.length;$('all').indeterminate=nv>0&&nv<vis.length;
   const n=items.filter(i=>i.inc).length;$('btnSave').disabled=$('btnZip').disabled=!n;
   $('btnSave').textContent=`Guardar ${n} en una carpeta…`;$('btnZip').textContent=`Descargar ZIP (${n})`;
 }
+function visibles(){const qq=norm(q);return items.map((it,ix)=>({it,ix})).filter(({it})=>(filtro==='TODOS'||(filtro==='ERROR'?it.err:it.estado===filtro))&&(!qq||norm(it.file.name).includes(qq)))}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---------- salida ---------- */
@@ -189,14 +197,25 @@ function rutas(){ // asigna ruta destino evitando choques
 async function guardar(){
   if(!window.showDirectoryPicker){$('msg').textContent='Tu navegador no permite guardar en carpeta. Usa Chrome/Edge o el ZIP.';return}
   let root;try{root=await showDirectoryPicker({mode:'readwrite'})}catch{return}
-  const r=rutas();let ok=0;
+  const r=rutas().filter(x=>x.it.saved!==root.name); // omite los ya guardados en esta misma carpeta
+  let ok=0,fail=0,done=0;
   for(const {it,dir,nm} of r){
-    try{let h=root;for(const d of dir)h=await h.getDirectoryHandle(d,{create:true});
-      const fh=await h.getFileHandle(nm,{create:true});const w=await fh.createWritable();await w.write(it.file);await w.close();ok++;
-      $('msg').textContent=`Guardando… ${ok}/${r.length}`;
-    }catch(e){$('msg').textContent='Error en '+nm+': '+e.message;return}
+    let h=null,fh=null,w=null;
+    try{
+      h=root;for(const d of dir)h=await h.getDirectoryHandle(d,{create:true});
+      let buf;
+      for(let t=0;t<3;t++){try{buf=await it.file.arrayBuffer();break}catch(e){if(t===2)throw e;await new Promise(z=>setTimeout(z,700))}}
+      fh=await h.getFileHandle(nm,{create:true});w=await fh.createWritable();await w.write(buf);await w.close();w=null;
+      it.saved=root.name;it.err=false;ok++;
+    }catch(e){
+      fail++;it.err=true;
+      try{if(w)await w.abort()}catch{}
+      try{if(fh&&h)await h.removeEntry(nm)}catch{}
+    }
+    done++;if(done%5===0||done===r.length)$('msg').textContent=`Guardando… ${done}/${r.length}`+(fail?` · con error: ${fail}`:'');
   }
-  $('msg').textContent=`✔ ${ok} PDF guardados en «${root.name}/${dir0()}».`;
+  pintar();
+  $('msg').innerHTML=`✔ ${ok} PDF guardados en «${esc(root.name)}/${esc(dir0())}».`+(fail?` <b>${fail} no se pudieron leer</b> (filtro «Error de lectura»). Pon la carpeta de origen en «Mantener siempre en este dispositivo», espera a que termine de descargar, vuelve a arrastrarla y pulsa Guardar de nuevo: solo se guardan los pendientes.`:'');
 }
 const dir0=()=>($('proy').value||'PROYECTO').trim();
 async function zip(){
@@ -206,9 +225,9 @@ async function zip(){
   descargar(b,'EMO_proyecto.zip');$('msg').textContent='✔ ZIP generado.';
 }
 function csv(){
-  const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
-  const l=[['mes','archivo','clave','estado','coincide_con','copiado'].join(',')];
-  for(const i of items)l.push([i.mes,i.file.name,i.clave,i.estado,i.cand,i.inc?'SI':'NO'].map(q).join(','));
+  const qt=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  const l=[['mes','archivo','clave','estado','coincide_con','copiado','manual'].join(',')];
+  for(const i of items)l.push([i.mes,i.file.name,i.clave,i.estado,i.cand,i.inc?'SI':'NO',i.inc&&i.estado!=='EXACTO'?'SI':''].map(qt).join(','));
   descargar(new Blob(['﻿'+l.join('\n')],{type:'text/csv'}),'reporte_emo.csv');
 }
 function descargar(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
@@ -228,7 +247,9 @@ $('fileF').onchange=e=>{agregar([...e.target.files].map(f=>{const p=f.webkitRela
 $('fileP').onchange=e=>{agregar([...e.target.files].map(f=>({file:f,mes:'SIN MES'})));e.target.value=''};
 $('btnClear').onclick=()=>{items=[];filtro='TODOS';$('msg').textContent='';pintar()};
 $('chips').onclick=e=>{const f=e.target.dataset.f;if(f){filtro=f;pintar()}};
-$('tb').onchange=e=>{const i=e.target.dataset.i;if(i!=null){items[i].inc=e.target.checked;pintar()}};
+$('tb').onchange=e=>{const i=e.target.dataset.i;if(i!=null){items[i].inc=e.target.checked;items[i].man=e.target.checked;pintar()}};
+$('all').onchange=e=>{for(const {it} of visibles()){it.inc=e.target.checked;it.man=e.target.checked}pintar()};
+$('q').oninput=e=>{q=e.target.value;pintar()};
 $('btnSave').onclick=guardar;$('btnZip').onclick=zip;$('btnCsv').onclick=csv;
 ['dragover','drop'].forEach(e=>window.addEventListener(e,ev=>ev.preventDefault()));
 </script>
