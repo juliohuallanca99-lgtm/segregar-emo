@@ -62,7 +62,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer}
   <h2><span class="n">2</span> PDF de EMO</h2>
   <div class="drop" id="dropP"><b>Arrastra aquí la carpeta EMO, una carpeta de mes o los PDF</b><br><small>Si arrastras carpetas, se detecta el mes por el nombre de la carpeta (ej. «1. ENE»)</small></div>
   <div class="row">
-    <button id="btnFolder">Elegir carpeta…</button>
+    <button id="btnFolder">Elegir carpeta… (recomendado)</button>
     <button id="btnFiles">Elegir PDF…</button>
     <button id="btnClear">Limpiar</button>
   </div>
@@ -130,11 +130,11 @@ async function leerExcel(file){
 function agregar(lst){ // lst: [{file, mes}]
   const key=(f,m)=>f.name+'|'+m;
   const ya=new Map(items.map(i=>[key(i.file,i.mes),i]));
-  for(const {file,mes} of lst){
+  for(const {file,mes,handle} of lst){
     if(!/\.pdf$/i.test(file.name))continue;
     const ex=ya.get(key(file,mes));
-    if(ex){ if(ex.err){ex.file=file;ex.err=false} continue }
-    items.push({file,mes,clave:'',estado:'',cand:'',inc:false,man:undefined});
+    if(ex){ if(ex.err){ex.file=file;ex.handle=handle;ex.err=false} continue }
+    items.push({file,mes,handle,clave:'',estado:'',cand:'',inc:false,man:undefined});
   }
   reclasificar();
 }
@@ -146,6 +146,19 @@ function reclasificar(){
   }
   pintar();
 }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const obtener=it=>it.handle?it.handle.getFile():Promise.resolve(it.file);
+async function walk(dh,out){
+  for await(const [n,h] of dh.entries()){
+    if(h.kind==='file'){ if(/\.pdf$/i.test(n)) out.push({file:{name:n,size:0},handle:h,mes:dh.name}) }
+    else await walk(h,out);
+  }
+}
+async function elegirCarpeta(){
+  if(!window.showDirectoryPicker){$('fileF').click();return}
+  let dh;try{dh=await showDirectoryPicker({mode:'read'})}catch{return}
+  $('statP').textContent='Leyendo carpeta…';const out=[];await walk(dh,out);agregar(out);
+}
 async function leerEntry(e,pathParts,out){
   if(e.isFile){const f=await new Promise(r=>e.file(r));out.push({file:f,mes:pathParts[pathParts.length-1]||'SIN MES'})}
   else if(e.isDirectory){
@@ -156,6 +169,14 @@ async function leerEntry(e,pathParts,out){
 }
 async function desdeDrop(ev){
   const out=[];const its=[...ev.dataTransfer.items];
+  if(its.length&&its[0].getAsFileSystemHandle){   // referencias vivas: leen el archivo al momento de guardar
+    const ps=its.map(i=>i.kind==='file'?i.getAsFileSystemHandle():null);
+    const hs=await Promise.all(ps.map(p=>p&&p.catch(()=>null)));
+    for(const h of hs){ if(!h)continue;
+      if(h.kind==='directory')await walk(h,out);
+      else if(/\.pdf$/i.test(h.name))out.push({file:{name:h.name,size:0},handle:h,mes:'SIN MES'}) }
+    agregar(out);return;
+  }
   const ents=its.map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry());
   if(ents.some(Boolean)){for(const e of ents){if(e)await leerEntry(e,[],out)}}
   else for(const f of ev.dataTransfer.files) out.push({file:f,mes:'SIN MES'});
@@ -204,7 +225,7 @@ async function guardar(){
     try{
       h=root;for(const d of dir)h=await h.getDirectoryHandle(d,{create:true});
       let buf;
-      for(let t=0;t<3;t++){try{buf=await it.file.arrayBuffer();break}catch(e){if(t===2)throw e;await new Promise(z=>setTimeout(z,700))}}
+      for(let t=0;t<4;t++){try{buf=await (await obtener(it)).arrayBuffer();break}catch(e){if(t===3)throw e;await sleep(1200*(t+1))}}
       fh=await h.getFileHandle(nm,{create:true});w=await fh.createWritable();await w.write(buf);await w.close();w=null;
       it.saved=root.name;it.err=false;ok++;
     }catch(e){
@@ -215,14 +236,18 @@ async function guardar(){
     done++;if(done%5===0||done===r.length)$('msg').textContent=`Guardando… ${done}/${r.length}`+(fail?` · con error: ${fail}`:'');
   }
   pintar();
-  $('msg').innerHTML=`✔ ${ok} PDF guardados en «${esc(root.name)}/${esc(dir0())}».`+(fail?` <b>${fail} no se pudieron leer</b> (filtro «Error de lectura»). Pon la carpeta de origen en «Mantener siempre en este dispositivo», espera a que termine de descargar, vuelve a arrastrarla y pulsa Guardar de nuevo: solo se guardan los pendientes.`:'');
+  $('msg').innerHTML=`✔ ${ok} PDF guardados en «${esc(root.name)}/${esc(dir0())}».`+(fail?` <b>${fail} no se pudieron leer</b> (filtro «Error de lectura»). Suelen ser archivos que OneDrive tiene solo en la nube. Pon la carpeta de origen en «Mantener siempre en este dispositivo», espera a que termine de descargar y pulsa Guardar de nuevo: solo se reintentan los pendientes.`:'');
 }
 const dir0=()=>($('proy').value||'PROYECTO').trim();
 async function zip(){
-  const z=new JSZip();for(const {it,dir,nm} of rutas())z.file(dir.join('/')+'/'+nm,it.file);
+  const z=new JSZip();let bad=0;
+  for(const {it,dir,nm} of rutas()){
+    try{let f;for(let t=0;t<4;t++){try{f=await obtener(it);await f.arrayBuffer();break}catch(e){if(t===3)throw e;await sleep(1200*(t+1))}}
+      z.file(dir.join('/')+'/'+nm,f)}catch{bad++;it.err=true}
+  }
   $('msg').textContent='Generando ZIP…';
   const b=await z.generateAsync({type:'blob',compression:'STORE'});
-  descargar(b,'EMO_proyecto.zip');$('msg').textContent='✔ ZIP generado.';
+  descargar(b,'EMO_proyecto.zip');pintar();$('msg').textContent='✔ ZIP generado.'+(bad?` ${bad} no se pudieron leer (ver filtro «Error de lectura»).`:'');
 }
 function csv(){
   const qt=s=>'"'+String(s).replace(/"/g,'""')+'"';
@@ -242,7 +267,7 @@ function dz(el,fn,click){
 dz($('dropX'),ev=>{const f=ev.dataTransfer.files[0];if(f)leerExcel(f)},()=>$('fileX').click());
 $('fileX').onchange=e=>e.target.files[0]&&leerExcel(e.target.files[0]);
 dz($('dropP'),desdeDrop);
-$('btnFolder').onclick=()=>$('fileF').click();$('btnFiles').onclick=()=>$('fileP').click();
+$('btnFolder').onclick=elegirCarpeta;$('btnFiles').onclick=()=>$('fileP').click();
 $('fileF').onchange=e=>{agregar([...e.target.files].map(f=>{const p=f.webkitRelativePath.split('/');return{file:f,mes:p.length>1?p[p.length-2]:'SIN MES'}}));e.target.value=''};
 $('fileP').onchange=e=>{agregar([...e.target.files].map(f=>({file:f,mes:'SIN MES'})));e.target.value=''};
 $('btnClear').onclick=()=>{items=[];filtro='TODOS';$('msg').textContent='';pintar()};
@@ -250,7 +275,7 @@ $('chips').onclick=e=>{const f=e.target.dataset.f;if(f){filtro=f;pintar()}};
 $('tb').onchange=e=>{const i=e.target.dataset.i;if(i!=null){items[i].inc=e.target.checked;items[i].man=e.target.checked;pintar()}};
 $('all').onchange=e=>{for(const {it} of visibles()){it.inc=e.target.checked;it.man=e.target.checked}pintar()};
 $('q').oninput=e=>{q=e.target.value;pintar()};
-$('btnSave').onclick=guardar;$('btnZip').onclick=zip;$('btnCsv').onclick=csv;
+let ocupado=false;$('btnSave').onclick=async()=>{if(ocupado)return;ocupado=true;$('btnSave').disabled=true;try{await guardar()}finally{ocupado=false;pintar()}};$('btnZip').onclick=zip;$('btnCsv').onclick=csv;
 ['dragover','drop'].forEach(e=>window.addEventListener(e,ev=>ev.preventDefault()));
 </script>
 </body>
